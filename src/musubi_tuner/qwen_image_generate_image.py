@@ -713,6 +713,7 @@ def generate(
     # 4. Prepare latent variables
     num_channels_latents = model.in_channels // 4
     latents = qwen_image_utils.prepare_latents(1, num_channels_latents, height, width, torch.bfloat16, device, seed_g)
+    latents = latents.to(torch.float32)
     if not is_edit:
         img_shapes = [(1, height // VAE_SCALE_FACTOR // 2, width // VAE_SCALE_FACTOR // 2)]
     else:
@@ -725,7 +726,7 @@ def generate(
         ]
         control_latent = [qwen_image_utils.pack_latents(cl) for cl in control_latents]  # B, C, 1, H, W -> B, H*W, C
         control_latent = torch.cat(control_latent, dim=1)  # concat controls in the sequence dimension
-        control_latent = control_latent.to(device)
+        control_latent = control_latent.to(device, dtype=latents.dtype)
     logger.info(f"Embed: {embed.shape}, negative_embed: {negative_embed.shape}, img_shapes: {img_shapes}")
 
     # 5. Prepare timesteps
@@ -799,6 +800,7 @@ def generate(
     # 6. Denoising loop
     do_cfg = args.guidance_scale != 1.0
     scheduler.set_begin_index(0)
+    model_dtype = model.dtype
     with tqdm(total=num_inference_steps, desc="Denoising steps") as pbar:
         for i, t in enumerate(timesteps):
             timestep = t.expand(latents.shape[0]).to(latents.dtype)
@@ -807,9 +809,13 @@ def generate(
             if is_edit:
                 latent_model_input = torch.cat([latents, control_latent], dim=1)
 
+            latent_model_input_for_model = (
+                latent_model_input if latent_model_input.dtype == model_dtype else latent_model_input.to(model_dtype)
+            )
+
             with torch.no_grad():
                 noise_pred = model(
-                    hidden_states=latent_model_input,
+                    hidden_states=latent_model_input_for_model,
                     timestep=timestep / 1000,
                     guidance=guidance,
                     encoder_hidden_states_mask=mask,
@@ -823,7 +829,7 @@ def generate(
             if do_cfg:
                 with torch.no_grad():
                     neg_noise_pred = model(
-                        hidden_states=latent_model_input,
+                        hidden_states=latent_model_input_for_model,
                         timestep=timestep / 1000,
                         guidance=guidance,
                         encoder_hidden_states_mask=negative_mask,
@@ -908,7 +914,7 @@ def generate(
                     latents = latents * inpainting_mask + noisy_control_latent * (1.0 - inpainting_mask)
 
             # compute the previous noisy sample x_t -> x_t-1
-            latents = scheduler.step(noise_pred, t, latents, return_dict=False)[0]
+            latents = scheduler.step(noise_pred, t, latents, return_dict=False)[0].to(torch.float32)
 
             if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % scheduler.order == 0):
                 pbar.update()
