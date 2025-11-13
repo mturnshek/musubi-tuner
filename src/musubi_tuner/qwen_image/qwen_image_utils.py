@@ -741,6 +741,25 @@ def calculate_shift(
     return mu
 
 
+def generate_discrete_flow_sigmas(num_inference_steps: int, shift: float) -> np.ndarray:
+    """
+    Generate the same sigma schedule as ComfyUI's ModelSamplingDiscreteFlow when a fixed shift is supplied.
+
+    Args:
+        num_inference_steps (int): number of steps
+        shift (float): discrete flow shift value
+
+    Returns:
+        np.ndarray: sigmas array of length `num_inference_steps`
+    """
+    # Equivalent to comfy.model_sampling.time_snr_shift
+    if shift <= 0:
+        raise ValueError("flow_shift must be > 0.")
+    t = np.linspace(1.0, 0.0, num_inference_steps, dtype=np.float32)
+    sigmas = shift * t / (1 + (shift - 1) * t)
+    return sigmas
+
+
 # Following code is minimal implementation of retrieve_timesteps
 # def retrieve_timesteps(
 #     sigmas: np.ndarray, device: torch.device, mu: Optional[float] = None, shift: Optional[float] = None

@@ -712,8 +712,7 @@ def generate(
 
     # 4. Prepare latent variables
     num_channels_latents = model.in_channels // 4
-    latents = qwen_image_utils.prepare_latents(1, num_channels_latents, height, width, torch.bfloat16, device, seed_g)
-    latents = latents.to(torch.float32)
+    latents = qwen_image_utils.prepare_latents(1, num_channels_latents, height, width, torch.float32, device, seed_g)
     if not is_edit:
         img_shapes = [(1, height // VAE_SCALE_FACTOR // 2, width // VAE_SCALE_FACTOR // 2)]
     else:
@@ -736,8 +735,12 @@ def generate(
     mu = qwen_image_utils.calculate_shift_qwen_image(image_seq_len)
     logger.info(f"Using mu={mu} for FlowMatchEulerDiscreteScheduler")
     scheduler = qwen_image_utils.get_scheduler(args.flow_shift)
-    # mu is kwarg for FlowMatchEulerDiscreteScheduler
-    timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, num_inference_steps, device, mu=mu)
+    if args.flow_shift is not None:
+        custom_sigmas = qwen_image_utils.generate_discrete_flow_sigmas(num_inference_steps, args.flow_shift)
+        timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, num_inference_steps, device, sigmas=custom_sigmas, mu=None)
+    else:
+        # mu is kwarg for FlowMatchEulerDiscreteScheduler
+        timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, num_inference_steps, device, mu=mu)
     assert n == num_inference_steps, f"Expected steps={num_inference_steps}, got {n} from scheduler."
 
     num_warmup_steps = 0  # because FlowMatchEulerDiscreteScheduler.order is 1, we don't need warmup steps

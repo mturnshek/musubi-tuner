@@ -197,8 +197,7 @@ class QwenImageNetworkTrainer(NetworkTrainer):
         # 4. Prepare latent variables
         num_channels_latents = model.in_channels // 4
         # latents is packed
-        latents = qwen_image_utils.prepare_latents(1, num_channels_latents, height, width, torch.bfloat16, device, generator)
-        latents = latents.to(torch.float32)
+        latents = qwen_image_utils.prepare_latents(1, num_channels_latents, height, width, torch.float32, device, generator)
         img_shapes = [(1, height // qwen_image_utils.VAE_SCALE_FACTOR // 2, width // qwen_image_utils.VAE_SCALE_FACTOR // 2)]
 
         if is_edit:
@@ -233,8 +232,12 @@ class QwenImageNetworkTrainer(NetworkTrainer):
 
         mu = qwen_image_utils.calculate_shift_qwen_image(image_seq_len)
         scheduler = qwen_image_utils.get_scheduler(discrete_flow_shift)
-        # mu is kwarg for FlowMatchingDiscreteScheduler
-        timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, sample_steps, device, mu=mu)
+        if discrete_flow_shift is not None:
+            custom_sigmas = qwen_image_utils.generate_discrete_flow_sigmas(sample_steps, discrete_flow_shift)
+            timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, sample_steps, device, sigmas=custom_sigmas, mu=None)
+        else:
+            # mu is kwarg for FlowMatchingDiscreteScheduler
+            timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, sample_steps, device, mu=mu)
         assert n == sample_steps, f"Expected steps={sample_steps}, got {n} from scheduler."
 
         num_warmup_steps = 0  # because FlowMatchingDiscreteScheduler.order is 1, we don't need warmup steps
