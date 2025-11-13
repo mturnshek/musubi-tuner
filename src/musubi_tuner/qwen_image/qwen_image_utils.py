@@ -1280,7 +1280,7 @@ def get_scheduler(shift: Optional[float] = None) -> FlowMatchEulerDiscreteSchedu
   "max_shift": 0.9,
   "num_train_timesteps": 1000,
   "shift": 1.0,
-  "shift_terminal": 0.02,
+  "shift_terminal": null,
   "stochastic_sampling": false,
   "time_shift_type": "exponential",
   "use_beta_sigmas": false,
