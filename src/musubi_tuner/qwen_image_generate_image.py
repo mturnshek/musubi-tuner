@@ -730,14 +730,13 @@ def generate(
 
     # 5. Prepare timesteps
     num_inference_steps = args.infer_steps
-    sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps)
     image_seq_len = latents.shape[1]
 
     mu = qwen_image_utils.calculate_shift_qwen_image(image_seq_len)
     logger.info(f"Using mu={mu} for FlowMatchEulerDiscreteScheduler")
     scheduler = qwen_image_utils.get_scheduler(args.flow_shift)
     # mu is kwarg for FlowMatchEulerDiscreteScheduler
-    timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, num_inference_steps, device, sigmas=sigmas, mu=mu)
+    timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, num_inference_steps, device, mu=mu)
     assert n == num_inference_steps, f"Expected steps={num_inference_steps}, got {n} from scheduler."
 
     num_warmup_steps = 0  # because FlowMatchEulerDiscreteScheduler.order is 1, we don't need warmup steps
