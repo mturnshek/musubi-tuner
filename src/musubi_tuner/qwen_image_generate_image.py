@@ -834,11 +834,7 @@ def generate(
                 if is_edit:
                     neg_noise_pred = neg_noise_pred[:, : latents.shape[1], :]  # trim to latents shape
 
-                comb_pred = neg_noise_pred + args.guidance_scale * (noise_pred - neg_noise_pred)
-
-                cond_norm = torch.norm(noise_pred, dim=-1, keepdim=True)
-                noise_norm = torch.norm(comb_pred, dim=-1, keepdim=True)
-                noise_pred = comb_pred * (cond_norm / noise_norm)
+                noise_pred = neg_noise_pred + args.guidance_scale * (noise_pred - neg_noise_pred)
 
             # Reference Consistency Mask (RCM) or inpainting
             if rcm_enabled and i > 0 or inpainting_mask is not None:
