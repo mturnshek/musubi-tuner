@@ -198,6 +198,7 @@ class QwenImageNetworkTrainer(NetworkTrainer):
         num_channels_latents = model.in_channels // 4
         # latents is packed
         latents = qwen_image_utils.prepare_latents(1, num_channels_latents, height, width, torch.bfloat16, device, generator)
+        latents = latents.to(torch.float32)
         img_shapes = [(1, height // qwen_image_utils.VAE_SCALE_FACTOR // 2, width // qwen_image_utils.VAE_SCALE_FACTOR // 2)]
 
         if is_edit:
@@ -222,19 +223,18 @@ class QwenImageNetworkTrainer(NetworkTrainer):
             control_latent = [qwen_image_utils.pack_latents(cl) for cl in control_latents]  # B, C, 1, H, W -> B, H*W, C
             control_latents = None
             control_latent = torch.cat(control_latent, dim=1)  # concat controls in the sequence dimension
-            control_latent = control_latent.to(device=device, dtype=torch.bfloat16)
+            control_latent = control_latent.to(device=device, dtype=latents.dtype)
 
         else:
             control_latent = None
 
         # 5. Prepare timesteps
-        sigmas = np.linspace(1.0, 1 / sample_steps, sample_steps)
         image_seq_len = latents.shape[1]
 
         mu = qwen_image_utils.calculate_shift_qwen_image(image_seq_len)
         scheduler = qwen_image_utils.get_scheduler(discrete_flow_shift)
         # mu is kwarg for FlowMatchingDiscreteScheduler
-        timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, sample_steps, device, sigmas=sigmas, mu=mu)
+        timesteps, n = qwen_image_utils.retrieve_timesteps(scheduler, sample_steps, device, mu=mu)
         assert n == sample_steps, f"Expected steps={sample_steps}, got {n} from scheduler."
 
         num_warmup_steps = 0  # because FlowMatchingDiscreteScheduler.order is 1, we don't need warmup steps
@@ -247,6 +247,7 @@ class QwenImageNetworkTrainer(NetworkTrainer):
         scheduler.set_begin_index(0)
         # with progress_bar(total=sample_steps) as pbar:
 
+        model_dtype = model.dtype
         with tqdm(total=sample_steps, desc="Denoising steps") as pbar:
             for i, t in enumerate(timesteps):
                 timestep = t.expand(latents.shape[0]).to(latents.dtype)
@@ -255,9 +256,15 @@ class QwenImageNetworkTrainer(NetworkTrainer):
                 if is_edit:
                     latent_model_input = torch.cat([latents, control_latent], dim=1)
 
+                latent_model_input_for_model = (
+                    latent_model_input
+                    if latent_model_input.dtype == model_dtype
+                    else latent_model_input.to(model_dtype)
+                )
+
                 with torch.no_grad():
                     noise_pred = model(
-                        hidden_states=latent_model_input,
+                        hidden_states=latent_model_input_for_model,
                         timestep=timestep / 1000,
                         guidance=guidance,
                         encoder_hidden_states_mask=None,
@@ -271,7 +278,7 @@ class QwenImageNetworkTrainer(NetworkTrainer):
                 if do_cfg:
                     with torch.no_grad():
                         neg_noise_pred = model(
-                            hidden_states=latent_model_input,
+                            hidden_states=latent_model_input_for_model,
                             timestep=timestep / 1000,
                             guidance=guidance,
                             encoder_hidden_states_mask=None,
@@ -281,14 +288,10 @@ class QwenImageNetworkTrainer(NetworkTrainer):
                         )
                     if is_edit:
                         neg_noise_pred = neg_noise_pred[:, :image_seq_len]
-                    comb_pred = neg_noise_pred + cfg_scale * (noise_pred - neg_noise_pred)
-
-                    cond_norm = torch.norm(noise_pred, dim=-1, keepdim=True)
-                    noise_norm = torch.norm(comb_pred, dim=-1, keepdim=True)
-                    noise_pred = comb_pred * (cond_norm / noise_norm)
+                    noise_pred = neg_noise_pred + cfg_scale * (noise_pred - neg_noise_pred)
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = scheduler.step(noise_pred, t, latents, return_dict=False)[0]
+                latents = scheduler.step(noise_pred, t, latents, return_dict=False)[0].to(torch.float32)
 
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % scheduler.order == 0):
                     pbar.update()
