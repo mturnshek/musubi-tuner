@@ -1148,7 +1148,8 @@ class NetworkTrainer:
         height = sample_parameter.get("height", 256)
         frame_count = sample_parameter.get("frame_count", 1)
         guidance_scale = sample_parameter.get("guidance_scale", self.default_guidance_scale)
-        discrete_flow_shift = sample_parameter.get("discrete_flow_shift", 14.5)
+        default_flow_shift = args.discrete_flow_shift if args.discrete_flow_shift is not None else 14.5
+        discrete_flow_shift = sample_parameter.get("discrete_flow_shift", default_flow_shift)
         seed = sample_parameter.get("seed")
         prompt: str = sample_parameter.get("prompt", "")
         cfg_scale = sample_parameter.get("cfg_scale", None)  # None for architecture default
