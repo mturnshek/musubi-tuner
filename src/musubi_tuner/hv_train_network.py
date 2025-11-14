@@ -1150,11 +1150,6 @@ class NetworkTrainer:
         guidance_scale = sample_parameter.get("guidance_scale", self.default_guidance_scale)
         default_flow_shift = args.discrete_flow_shift if args.discrete_flow_shift is not None else 14.5
         discrete_flow_shift = sample_parameter.get("discrete_flow_shift", default_flow_shift)
-        logger.info(
-            f"sample_image_inference: args.discrete_flow_shift={args.discrete_flow_shift}, "
-            f"prompt_override_flow_shift={sample_parameter.get('discrete_flow_shift', None)}, "
-            f"using={discrete_flow_shift}"
-        )
         seed = sample_parameter.get("seed")
         prompt: str = sample_parameter.get("prompt", "")
         cfg_scale = sample_parameter.get("cfg_scale", None)  # None for architecture default
